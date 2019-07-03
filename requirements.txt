@@ -1,4 +1,5 @@
 aliyun-python-sdk-core==2.13.5
 aliyun-python-sdk-core-v3==2.13.3
 aliyun-python-sdk-rds==2.1.4
-elasticsearch==6.4.0
+elasticsearch>=6.0.0,<7.0.0
+elasticsearch_dsl>=6.0.0,<7.0.0

@@ -4,6 +4,7 @@
 
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
+from elasticsearch_dsl import Search
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
 from aliyunsdkrds.request.v20140815.DescribeDBInstancesRequest import DescribeDBInstancesRequest
@@ -55,18 +56,23 @@ class ElkPusher(object):
                 verify_certs=False,
             )
 
-    def get_last_log(self):
+    def get_last_log(self, ins_id):
         """
-        从ES获取最后一条插入的日志，如果当天和前一天均没有日志，则返回空
+        从ES获取指定实例最后一条插入的日志，如果当天和前一天均没有日志，则返回空
+        :param str ins_id: 实例ID
         :return dict: 返回查询到的日志内容
         """
         try:
             index_name = ES_Index + datetime.now().strftime("-%Y.%m.%d")
-            es_logs = self.es_client.search(index=index_name, sort=["ExecutionStartTime:desc"], size=1)
+            s = Search(using=self.es_client, index=index_name).query("match", InstanceID=ins_id) \
+                .sort({"ExecutionStartTime": {"order": "desc"}})
+            es_logs = s.execute()
         except NotFoundError:  # 当天的index还没创建，取前一天的最后一条数据
             try:
                 index_name = ES_Index + (datetime.now() + timedelta(days=-1)).strftime("-%Y.%m.%d")
-                es_logs = self.es_client.search(index=index_name, sort=["ExecutionStartTime:desc"], size=1)
+                s = Search(using=self.es_client, index=index_name).query("match", InstanceID=ins_id) \
+                    .sort({"ExecutionStartTime": {"order": "desc"}})
+                es_logs = s.execute()
             except NotFoundError:  # 如果前一天仍然没有产生日志，则返回空
                 return None
         return es_logs["hits"]["hits"][0]
@@ -80,6 +86,7 @@ class ElkPusher(object):
         """
         try:
             self.es_client.index(index=index_name, doc_type="slow_sql", body=log)
+            # print(log)
             # print("保存日志到%s成功" % index_name)
         except Exception:
             traceback.print_exc()
@@ -164,8 +171,8 @@ class RdsSlowLog(object):
         :param int page_size: 单页日志条数，多余此数量的翻页处理
         :return list: 指定实例的慢查询日志列表
         """
-        start_time = self.get_last_time()  # 获取最后一条日志的时间
-        end_time = datetime.strftime(datetime.utcnow(), '%Y-%m-%dT%H:%MZ')
+        start_time = self.get_last_time(ins_id)  # 获取最后一条日志的时间
+        end_time = datetime.strftime(datetime.utcnow() + timedelta(minutes=-1), '%Y-%m-%dT%H:%MZ')
         received_item = 0
         page_num = 1
         log_list = list()
@@ -193,16 +200,16 @@ class RdsSlowLog(object):
             else:
                 return log_list
 
-    def get_last_time(self):
+    def get_last_time(self, ins_id):
         """
         获取上次保存的最后一条日志的时间，最多获取前一天的日志，如果前一天也没有产生日志，则取前一天的0点作为返回值
         :return str: 字符串格式的UTC时间
         """
         try:
-            last_log = self.es_handler.get_last_log()
-            last_time = last_log["ExecutionStartTime"]
-            next_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%SZ") + timedelta(seconds=1)
-            return next_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            last_log = self.es_handler.get_last_log(ins_id)
+            last_time = last_log["_source"]["ExecutionStartTime"]
+            next_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%SZ") + timedelta(minutes=1)
+            return next_time.strftime("%Y-%m-%dT%H:%MZ")
         except (KeyError, IndexError, TypeError):
             return datetime.strftime(datetime.utcnow() + timedelta(days=-1), '%Y-%m-%dT00:00Z')
 
