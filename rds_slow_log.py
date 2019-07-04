@@ -1,4 +1,4 @@
-#!/bin/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Author: huxy1501
 
@@ -12,6 +12,8 @@ from aliyunsdkrds.request.v20140815.DescribeSlowLogRecordsRequest import Describ
 from datetime import datetime, timedelta
 import json
 import traceback
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 阿里云配置
 API_Key = 'ID'
@@ -87,7 +89,7 @@ class ElkPusher(object):
         try:
             self.es_client.index(index=index_name, doc_type="slow_sql", body=log)
             # print(log)
-            # print("保存日志到%s成功" % index_name)
+            # print(u"保存日志到%s成功" % index_name)
         except Exception:
             traceback.print_exc()
             return False
@@ -160,7 +162,7 @@ class RdsSlowLog(object):
                 if self.es_handler.save_log(json.dumps(log), es_index):  # 将日志写入ES
                     log_length += 1
                 else:
-                    exit("保存日志到ES出错")
+                    exit(u"保存日志到ES出错")
         else:
             return log_length
 
@@ -187,7 +189,7 @@ class RdsSlowLog(object):
             request.set_DBName(DBName)
 
         while True:
-            # print("正在获取实例[%s]第[%d]页日志" % (ins_id, page_num))
+            # print(u"正在获取实例[%s]第[%d]页日志" % (ins_id, page_num))
             request.set_PageNumber(page_num)
             response = self.AcsClient.do_action_with_exception(request)
             response_dic = json.loads(response)
@@ -228,6 +230,6 @@ if __name__ == "__main__":
     log_checker = RdsSlowLog()
     try:
         log_len = log_checker.log_transfer()
-        print("处理成功，累计处理日志[%d]条" % log_len)
+        print(u"处理成功，累计处理日志[%d]条" % log_len)
     except (ValueError, IndexError, KeyError, ClientException, ServerException):
         traceback.print_exc()
