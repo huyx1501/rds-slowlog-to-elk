@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -*- encoding=UTF8 -*-
 # Author: huxy1501
 
 from elasticsearch import Elasticsearch
@@ -152,6 +152,7 @@ class RdsSlowLog(object):
             instance_id = instance["InstanceID"]
             instance_name = instance["DBInstanceDescription"]
             instance_log_list = self.get_logs(instance_id)
+            print(u"[%s] 开始获取实例[%s]的慢查询日志" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), instance_id))
             for log in instance_log_list:  # 为每条日志额外加上实例信息
                 log["InstanceID"] = instance_id
                 log["InstanceName"] = instance_name
@@ -162,7 +163,7 @@ class RdsSlowLog(object):
                 if self.es_handler.save_log(json.dumps(log), es_index):  # 将日志写入ES
                     log_length += 1
                 else:
-                    exit(u"保存日志到ES出错")
+                    exit(u"[%s] 保存日志到ES出错" % datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         else:
             return log_length
 
@@ -213,6 +214,7 @@ class RdsSlowLog(object):
             next_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%SZ") + timedelta(minutes=1)
             return next_time.strftime("%Y-%m-%dT%H:%MZ")
         except (KeyError, IndexError, TypeError):
+            print(u"[%s] 未查询到最后一条日志，重新开始获取2天内的慢查询" % datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             return datetime.strftime(datetime.utcnow() + timedelta(days=-1), '%Y-%m-%dT00:00Z')
 
     @staticmethod
@@ -230,6 +232,6 @@ if __name__ == "__main__":
     log_checker = RdsSlowLog()
     try:
         log_len = log_checker.log_transfer()
-        print(u"处理成功，累计处理日志[%d]条" % log_len)
+        print(u"[%s] 处理成功，累计处理日志[%d]条" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), log_len))
     except (ValueError, IndexError, KeyError, ClientException, ServerException):
         traceback.print_exc()
