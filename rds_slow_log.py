@@ -3,7 +3,7 @@
 # Author: huxy1501
 
 from elasticsearch import Elasticsearch
-from elasticsearch.exceptions import NotFoundError
+from elasticsearch.exceptions import NotFoundError, ConnectionError
 from elasticsearch_dsl import Search
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
@@ -64,20 +64,29 @@ class ElkPusher(object):
         :param str ins_id: 实例ID
         :return dict: 返回查询到的日志内容
         """
-        try:
-            index_name = ES_Index + datetime.now().strftime("-%Y.%m.%d")
-            s = Search(using=self.es_client, index=index_name).query("match", InstanceID=ins_id) \
-                .sort({"ExecutionStartTime": {"order": "desc"}})
-            es_logs = s.execute()
-        except NotFoundError:  # 当天的index还没创建，取前一天的最后一条数据
-            try:
-                index_name = ES_Index + (datetime.now() + timedelta(days=-1)).strftime("-%Y.%m.%d")
-                s = Search(using=self.es_client, index=index_name).query("match", InstanceID=ins_id) \
-                    .sort({"ExecutionStartTime": {"order": "desc"}})
-                es_logs = s.execute()
-            except NotFoundError:  # 如果前一天仍然没有产生日志，则返回空
-                return None
+        index_name = ES_Index + datetime.now().strftime("-%Y.%m.%d")
+        es_logs = self.search_log(index_name, ins_id)
+        if not es_logs:
+            index_name = ES_Index + (datetime.now() + timedelta(days=-1)).strftime("-%Y.%m.%d")
+            es_logs = self.search_log(index_name, ins_id)
         return es_logs["hits"]["hits"][0]
+
+    def search_log(self, idx_name, ins_id):
+        """
+        从ES中获取指定实例在指定索引中的数据
+        :param idx_name: 索引名称
+        :param ins_id: RDS实例名称
+        :return: 返回查询结果
+        """
+        try:
+            # print(u"[%s] 从[%s]查询[%s]的记录" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), idx_name, ins_id))
+            s = Search(using=self.es_client, index=idx_name).query("match", InstanceID=ins_id) \
+                .sort({"ExecutionStartTime": {"order": "desc"}})
+            return s.execute()
+        except NotFoundError:  # 未查询到结果
+            return None
+        except ConnectionError:
+            exit(u"[%s] 连接ES服务器失败" % datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     def save_log(self, log, index_name):
         """
@@ -101,6 +110,7 @@ class RdsSlowLog(object):
     """
     获取RDS慢查询日志写入ElasticSearch
     """
+
     def __init__(self):
         self.api_key = API_Key
         self.api_secret = API_Secret
